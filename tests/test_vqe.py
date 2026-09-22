@@ -12,6 +12,30 @@ def test_vqe_converges_to_exact_ground_energy():
     assert energy == pytest.approx(-N, abs=1e-3)
 
 
+def test_jax_interface_matches_autograd_interface():
+    """Same Hamiltonian, same ansatz, same seed: the interface is meant to
+    be an implementation-detail swap, not a change in what gets solved --
+    so both backends should land on (approximately) the same energy."""
+    jax = pytest.importorskip("jax")
+
+    N = 4
+    steps = 250
+    autograd_energy = VQESolver(
+        ClusterHamiltonian(N), HardwareEfficientAnsatz(layers=6), interface="autograd"
+    ).run(seed=0, steps=steps)
+    jax_energy = VQESolver(
+        ClusterHamiltonian(N), HardwareEfficientAnsatz(layers=6), interface="jax"
+    ).run(seed=0, steps=steps)
+
+    assert autograd_energy == pytest.approx(-N, abs=1e-3)
+    assert jax_energy == pytest.approx(-N, abs=1e-3)
+
+
+def test_jax_interface_rejects_bad_interface_name():
+    with pytest.raises(ValueError):
+        VQESolver(ClusterHamiltonian(4), HardwareEfficientAnsatz(layers=1), interface="tensorflow")
+
+
 def test_solver_is_ansatz_agnostic():
     """A from-scratch minimal Ansatz (single RY layer, no entanglement)
     plugs into VQESolver without any change to the solver -- the point of

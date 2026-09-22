@@ -1,0 +1,34 @@
+name: tests
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+jobs:
+  pytest:
+    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        python-version: ["3.10", "3.11", "3.12"]
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Python ${{ matrix.python-version }}
+        uses: actions/setup-python@v5
+        with:
+          python-version: ${{ matrix.python-version }}
+
+      - name: Install package (dev + jax extras)
+        # Deliberately NOT installing the "tensor" (quimb) extra here: it
+        # has a genuine, currently-unresolved version conflict with
+        # PennyLane's autoray pin (see README -- "Lessons learned getting
+        # quimb running"). Pinning both packages just to keep CI green
+        # would hide the real issue instead of documenting it, so the
+        # default.tensor tests are skipped (not failed) when quimb isn't
+        # installed, and quimb is left to a manual/local install.
+        run: pip install -e ".[dev,jax]"
+
+      - name: Run tests
+        run: pytest -v

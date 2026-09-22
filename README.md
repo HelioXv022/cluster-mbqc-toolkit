@@ -1,5 +1,7 @@
 # cluster-mbqc-toolkit
 
+[![tests](https://github.com/HelioXv022/cluster-mbqc-toolkit/actions/workflows/test.yml/badge.svg)](https://github.com/HelioXv022/cluster-mbqc-toolkit/actions/workflows/test.yml)
+
 A small PennyLane toolkit for **rotated 1D cluster states**, built to
 extend my M.Sc. thesis — *"Conditional Information Flow and Neural
 Representability of One-Dimensional Rotated Cluster States"* (Perimeter
@@ -12,11 +14,12 @@ different question: **what does the same physics look like natively as
 PennyLane circuits**, and what does that require in terms of software
 design, not just one-off scripts?
 
-Every numerical claim below is checked in `tests/` (50 tests, all passing)
-or in the runnable `examples/`, cross-checked at least two independent
-ways where the physics allows it (e.g. against a hand-written brute-force
-`numpy` matrix conjugation with no PennyLane involved) — nothing here is
-asserted without a test backing it.
+Every numerical claim below is checked in `tests/` (52 tests, all passing,
+run automatically on every push by the CI badge above) or in the runnable
+`examples/`, cross-checked at least two independent ways where the physics
+allows it (e.g. against a hand-written brute-force `numpy` matrix
+conjugation with no PennyLane involved) — nothing here is asserted without
+a test backing it.
 
 ## Physics results this toolkit reproduces
 
@@ -91,6 +94,12 @@ A few choices worth spelling out, since they're the actual content of
   hardware-efficient ansatz for a physics-informed one, never touches
   `VQESolver` itself — see `tests/test_vqe.py::test_solver_is_ansatz_agnostic`
   for a from-scratch minimal `Ansatz` plugged in with zero solver changes.
+  The autodiff/optimization backend is injected the same way: `VQESolver(...,
+  interface="jax")` swaps PennyLane's own autograd/backprop path for a
+  `jax.jit`-compiled cost, gradient, and hand-rolled Adam update, with zero
+  change to `run()`'s public contract — see
+  `tests/test_vqe.py::test_jax_interface_matches_autograd_interface` and
+  the JIT-caching finding below.
 - **Encapsulation with the validation living on the object**
   (`CMIAnalyzer`, `MBQCGadget`): `MBQCGadget.verify()` is a method on the
   same class as `MBQCGadget.apply()`, so "does this actually do what it
@@ -103,16 +112,19 @@ A few choices worth spelling out, since they're the actual content of
 pip install -e ".[dev]"
 # optional, only needed for the default.tensor (MPS) demo in example 1:
 pip install -e ".[tensor]"
+# optional, only needed for VQESolver(..., interface="jax") and example 5:
+pip install -e ".[jax]"
 ```
 
 ## Run
 
 ```bash
-pytest                              # 50 tests, ~30s
+pytest                              # 52 tests, ~50s (~30s without jax installed)
 python examples/01_cmi_crosscheck.py
 python examples/02_mbqc_gadget.py
-python examples/03_vqe_ground_state.py   # a few minutes (N up to 8)
-python examples/04_vqe_theta_sweep.py    # ~10 minutes (see note below)
+python examples/03_vqe_ground_state.py       # a few minutes (N up to 8)
+python examples/04_vqe_theta_sweep.py        # ~10 minutes (see note below)
+python examples/05_jax_vs_autograd_speed.py  # ~30s, needs the jax extra
 ```
 
 ## A genuine trainability finding (not swept under the rug)
@@ -133,6 +145,37 @@ trainability are different axes of difficulty, and a generic ansatz pays
 for not having the problem's structure (bond-dimension-2 / stabilizer
 commutativity) baked in.
 
+## A genuine JIT-compilation finding (also not swept under the rug)
+
+`VQESolver(..., interface="jax")` is a second autodiff/optimization
+backend behind the same `run()`/`run_multistart()` API — see
+`examples/05_jax_vs_autograd_speed.py`. The honest result isn't "jax is
+faster"; it's more specific, and the specifics are the actual point:
+
+- The **first** call to `run()` on a jax-backed solver pays a large,
+  one-time `jax.jit` trace/compile cost (at N=6 with an 8-layer ansatz:
+  ~35s, vs. autograd/backprop's steady ~8s per call).
+- **Every later call on the same solver instance** reuses that compiled
+  executable and finishes in tens of *milliseconds* — 100-1000x faster
+  than autograd, because the underlying quantum-circuit computation graph
+  never changes shape across restarts.
+- So a single one-off VQE run has no reason to prefer `interface="jax"`
+  here; `run_multistart`, a `theta`-sweep, or any workload that calls
+  `run()` many times on the same instance has every reason to.
+
+That second bullet only holds because `VQESolver` caches the compiled
+cost/gradient/Adam-step functions **on the instance**
+(`_get_jax_compiled()`), built once and reused. The first version of this
+code instead rebuilt `jax.jit(...)` fresh inside every `run()` call — a
+new Python closure each time, which JAX's trace cache treats as a cache
+miss regardless of the underlying shapes being identical — so it silently
+paid the full ~35s compile cost on *every* restart inside
+`run_multistart`, making `interface="jax"` a pure loss even for the exact
+workload it should help most. Caught by timing the two interfaces against
+each other (not by a unit test — the bug produced the right *answer*,
+just slowly), then fixed by moving the compiled functions to
+instance-level state built lazily on first use.
+
 ## Lessons learned getting `quimb` running (kept here on purpose)
 
 While testing `default.tensor` locally, `pip install quimb` alone broke an
@@ -152,6 +195,20 @@ pip install "autoray==0.7.2" "cotengra==0.7.5"
 mode and re-raises with the fix inline (see `tests/test_devices.py`),
 instead of leaving the next person to rediscover it from a generic
 "pip install quimb" message that doesn't actually solve it.
+
+## Possible next steps
+
+Not implemented here, but the natural next step for the `interface="jax"`
+path above: PennyLane's [Catalyst](https://github.com/PennyLaneAI/catalyst)
+compiles a whole hybrid quantum-classical program (including the
+optimization loop, not just one circuit call) through an MLIR-based quantum
+dialect down to LLVM/QIR via its `@qjit` decorator, rather than relying on
+JAX's `jit` to trace a single QNode call at a time the way `VQESolver`
+does now. For a workload like `run_multistart` — many structurally
+identical VQE runs — `@qjit`-ing the *entire* restart loop, not just the
+per-call cost function, is the more ambitious version of the same
+compile-once-reuse-many-times idea this repo's JAX finding already points
+at.
 
 ## What this repo is (and isn't)
 

@@ -18,6 +18,7 @@ dependencies = [
 
 [project.optional-dependencies]
 tensor = ["quimb"]
+jax = ["jax", "jaxlib"]
 dev = ["pytest"]
 
 [tool.setuptools.packages.find]
