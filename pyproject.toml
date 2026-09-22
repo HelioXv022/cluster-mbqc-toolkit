@@ -1,0 +1,27 @@
+[build-system]
+requires = ["setuptools>=68", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "cluster-mbqc-toolkit"
+version = "0.1.0"
+description = "PennyLane toolkit for rotated 1D cluster states: circuits, stabilizer Hamiltonians, conditional mutual information, an MBQC gate-teleportation gadget, and a VQE solver."
+readme = "README.md"
+requires-python = ">=3.10"
+license = { text = "MIT" }
+authors = [{ name = "Ziqi Xu" }]
+dependencies = [
+    "pennylane>=0.38",
+    "numpy",
+    "scipy",
+]
+
+[project.optional-dependencies]
+tensor = ["quimb"]
+dev = ["pytest"]
+
+[tool.setuptools.packages.find]
+where = ["src"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
