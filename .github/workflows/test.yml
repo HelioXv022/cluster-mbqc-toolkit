@@ -21,13 +21,9 @@ jobs:
           python-version: ${{ matrix.python-version }}
 
       - name: Install package (dev + jax extras)
-        # Deliberately NOT installing the "tensor" (quimb) extra here: it
-        # has a genuine, currently-unresolved version conflict with
-        # PennyLane's autoray pin (see README -- "Lessons learned getting
-        # quimb running"). Pinning both packages just to keep CI green
-        # would hide the real issue instead of documenting it, so the
-        # default.tensor tests are skipped (not failed) when quimb isn't
-        # installed, and quimb is left to a manual/local install.
+        # The "tensor" (quimb) extra is not installed: no test needs it.
+        # make_device()'s quimb error path is tested with a monkeypatch,
+        # and the MPS cross-check runs in examples/01_cmi_crosscheck.py.
         run: pip install -e ".[dev,jax]"
 
       - name: Run tests

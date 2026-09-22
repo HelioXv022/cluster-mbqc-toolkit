@@ -17,11 +17,12 @@ dependencies = [
 ]
 
 [project.optional-dependencies]
-tensor = ["quimb"]
-# jax<0.11 -- see README ("A second real dependency-version bug"): jax 0.11.0
-# removed jax.core.is_concrete, which PennyLane 0.45.1's JAX-interface code
-# (pennylane/math/utils.py::is_abstract) still calls. Unpinned, this breaks
-# VQESolver(..., interface="jax") the moment jax 0.11+ is installed.
+# pennylane>=0.43: PennyLane <= 0.42 pins autoray<0.8, which conflicts with
+# current quimb/cotengra. See README, "Known issue: PennyLane <= 0.42 and quimb".
+tensor = ["quimb", "pennylane>=0.43"]
+# jax<0.11: jax 0.11.0 removed jax.core.is_concrete, which PennyLane 0.45.1
+# still calls in pennylane/math/utils.py::is_abstract. See README,
+# "Known issue: jax >= 0.11".
 jax = ["jax<0.11", "jaxlib<0.11"]
 dev = ["pytest"]
 
