@@ -18,7 +18,11 @@ dependencies = [
 
 [project.optional-dependencies]
 tensor = ["quimb"]
-jax = ["jax", "jaxlib"]
+# jax<0.11 -- see README ("A second real dependency-version bug"): jax 0.11.0
+# removed jax.core.is_concrete, which PennyLane 0.45.1's JAX-interface code
+# (pennylane/math/utils.py::is_abstract) still calls. Unpinned, this breaks
+# VQESolver(..., interface="jax") the moment jax 0.11+ is installed.
+jax = ["jax<0.11", "jaxlib<0.11"]
 dev = ["pytest"]
 
 [tool.setuptools.packages.find]

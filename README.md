@@ -196,6 +196,34 @@ mode and re-raises with the fix inline (see `tests/test_devices.py`),
 instead of leaving the next person to rediscover it from a generic
 "pip install quimb" message that doesn't actually solve it.
 
+## A second real dependency-version bug (found by CI, not by me)
+
+The point of adding CI (above) rather than just trusting a local `pytest`
+run: it caught a real, live version-skew bug within minutes of the first
+push. `interface="jax"` passed every local test, but the GitHub Actions
+run failed on Python 3.12 with:
+
+```
+AttributeError: jax.core.is_concrete was deprecated in JAX v0.10.0 and removed in JAX v0.11.0.
+```
+
+Root cause: `jax==0.11.2` was published (literally, as of writing this)
+and fully removed `jax.core.is_concrete`, which PennyLane 0.45.1's own
+`interface="jax"` resolution code (`pennylane/math/utils.py::is_abstract`)
+still calls. My local sandbox had an already-installed `jax==0.10.2`
+(where the same call only emits a `DeprecationWarning`), so every local
+run passed while CI — installing dependencies fresh, with no version
+pinned — picked up the new release and broke immediately. Same shape of
+bug as the `quimb`/`autoray` conflict above (an unpinned optional
+dependency moves out from under a pinned core one), caught this time by
+CI instead of by hand. Fix, same idea: pin the optional dependency in
+`pyproject.toml` until PennyLane's own `is_abstract` stops calling the
+removed API:
+
+```toml
+jax = ["jax<0.11", "jaxlib<0.11"]
+```
+
 ## Possible next steps
 
 Not implemented here, but the natural next step for the `interface="jax"`
